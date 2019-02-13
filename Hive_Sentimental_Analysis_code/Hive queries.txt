@@ -1,0 +1,85 @@
+CREATE TABLE IF NOT EXISTS twitter_table_F10(
+        company_name STRING,
+        tweet_date STRING ,
+        tweet STRING,
+          )                   
+ROW FORMAT DELIMITED
+FIELDS TERMINATED BY ','
+STORED AS TEXTFILE; 
+
+
+LOAD DATA INPATH '/user/cloudera/t_10/stock_tweets_2.csv' OVERWRITE INTO TABLE twitter_table_F10;
+
+create table Twitter_base_table as select * from twitter_table_F10; --duplicate table was created incase if we accidentally drop this table 
+
+------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS sentiment_dictionary(
+        word STRING,
+        Index_value FLOAT
+        )
+ROW FORMAT DELIMITED
+FIELDS TERMINATED BY ','
+STORED AS TEXTFILE; 
+
+LOAD DATA INPATH '/user/cloudera/t_11/sentiment_dictionary_Index.csv' OVERWRITE INTO TABLE sentiment_dictionary;
+create table sentiment_base_table as select * from sentiment_dictionary; --duplicate table was created incase if we accidentally drop this table 
+------------------------------------------------
+CREATE TABLE IF NOT EXISTS stock_prices(
+        company_Name STRING,
+		Index        INT,
+        stock_price FLOAT,
+		Price_date STRING
+        )
+ROW FORMAT DELIMITED
+FIELDS TERMINATED BY ','
+STORED AS TEXTFILE;
+
+LOAD DATA INPATH '/user/cloudera/t_12/stock_prices.csv' OVERWRITE INTO TABLE stock_prices_new;
+create table stock_base_table as select * from stock_prices_new; --duplicate table was created incase if we accidentally drop this table
+--------------------------------------------------------------------------------
+
+--#To create sentiment scores using dictionary.txt for each tweet collected
+
+create table split_words as 
+select company_name as C_name,tweet_date as date_posted ,Index,words 
+from twitter_table_F10 LATERAL VIEW explode(sentences(lower(tweet))) w as words;
+
+create table word_join as 
+select split_words.C_name,split_words.date_posted,split_words.words,sentiment_dictionary.Index_value as weight  
+from split_words 
+LEFT OUTER JOIN sentiment_dictionary ON(split_words.words = sentiment_dictionary.word);
+----------------------------------------------------------------
+create table tweets_data_final as 
+select t.*, a.weight 
+from Twitter_base_table as t 
+left join (select Index, AVG(weight) as weight from word_join GROUP BY Index) as a on t.Index=a.Index;
+-------------------------------------------------------------------
+create table company_level as     --#analysing the cumulated total sentiment score weightage at company level
+select c_name, AVG(weight) as company_weightage
+from tweets_data where weightage is not null
+group by c_name ;
+-------------------------------------------------------------------
+create table day_level as        --#analysing the cumulated total sentiment score for each day 
+select c_name, date_posted,AVG(weight) as daywise_weightage
+from tweets_data where weightage is not null
+group by c_name,date_posted ;
+------------------------------
+--#code to append stock prices to twitter base table 
+
+create table tweets_stock as 
+select t.*,b.stock_price 
+from tweets_data_final as a 
+left outer join stock_prices as b 
+on a.c_name = b.company_Name
+and a.date_posted = b.price_date;
+---------------------------------------------------------------------
+---#Code to analyze the stock price variation over time 
+select c_name,date_posted,avg(stock_prices) as value 
+from tweets_stock
+group by c_name,date_posted;
+-------------------------------------------------------------------------
+
+
+
+

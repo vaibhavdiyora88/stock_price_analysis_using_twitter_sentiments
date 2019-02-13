@@ -1,0 +1,4 @@
+1) Ran the Python codes to extract the .csv files
+2) uploaded the data into hive to do the sentimental analysis
+3)uploaded the DJIA file in r to do linear regression 
+4)Finally uploaded all the files in tableau to get visual inferences
